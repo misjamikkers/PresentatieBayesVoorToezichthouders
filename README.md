@@ -1,0 +1,2 @@
+# PresentatieBayesVoorToezichthouders
+Presentatie gebruik Bayesiaanse statistiek voor toezichthoudes
