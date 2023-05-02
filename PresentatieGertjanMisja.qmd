@@ -1,5 +1,5 @@
 ---
-title: "Gebruik van Bayesiaanse statistiek door toezichthouders"
+title: "Bayesiaanse statistiek voor toezichthouders"
 subtitle: "Onzekerheid en het datagenererende proces"
 author: "Misja Mikkers & Gertjan Verhoeven"
 institute: "Dutch Healthcare Authority (NZa) and Tilburg University"
@@ -8,12 +8,19 @@ date-format: long
 lang: en
 format:
   revealjs: 
-    theme: sky
-    logo: logo1.png
+    theme: simple
+    logo: Logo_NZaWetenschap.png
+    css: logo.css
     slide-number: c/t #< collapsed/total
     self-contained: true
     editor: visual
 ---
+
+## Plan voor vandaag
+
+-   Waarom Bayesiaanse statistiek en wat doet het
+-   Simpel voorbeeld waarin we de invloed van priors laten zien
+-   Bayesiaans beslismodel marktmacht
 
 ## Waarom Bayesiaanse statistiek?
 
@@ -26,7 +33,6 @@ library(brms) # bayesian analyse
 library(broom) # voor tidy regressie resultaten
 library(broom.mixed) # broom voor brms
 library(tidybayes) # voor extracting samples
-library(gganimate) # voor animated plots
 library(ggridges) # voor ggridges plots
 library(dagitty) # voor DAGS
 library(ggdag) # voor mooiere DAGS
@@ -52,18 +58,6 @@ library(kableExtra) # voor tabellen
 -   we willen vooraf weten of het beleid kan helpen (wat veroorzaakt probleem?)
 -   beleid kunnen evalueren
 -   in een wereld van onzekerheid
-
-## Tools: DAGs en Bayes leiden tot inzicht in het DGP
-
-::: {align="center"}
-<img src="bayesianDAG.png" width="800" height="300"/>
-:::
-
-## Plan voor vandaag
-
--   Waarom Bayesiaanse statistiek en wat doet het
--   Simpel voorbeeld
--   Bayesiaans beslismodel marktmacht
 
 ## Eerste Bayesiaanse analyse
 
@@ -135,8 +129,6 @@ saveRDS(model_l, "model_l.rds")
 
 ```
 
-
-
 ```{r}
 
 samples_l <- tidy_draws(model_l, "^b") %>%
@@ -150,7 +142,7 @@ ggplot() +
   theme_bw() +
   labs(x = "Verschil tussen mannen en vrouwen", title = "Strakke prior en veel data") +
   annotate(geom = "text", x = -13.8, y = 7, 
-           label = "n = 100.000\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
+           label = "n = 200.000\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
 
  
 
@@ -192,7 +184,9 @@ ggplot() +
 
 ```
 
-```{r,echo= TRUE}
+## Resultaat
+
+```{r}
 fullrun <- 0
 
 
@@ -223,8 +217,6 @@ saveRDS(model_la, "model_la.rds")
 
 ```
 
-
-
 ```{r}
 
 samples_la <- tidy_draws(model_la, "^b") %>%
@@ -238,7 +230,7 @@ ggplot() +
   theme_bw() +
   labs(x = "Verschil tussen mannen en vrouwen", title = "Strakke prior en weinig data") +
   annotate(geom = "text", x = -5, y = 0.3, 
-           label = "n = 10\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
+           label = "n = 20\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
 
 
  
@@ -249,7 +241,7 @@ ggplot() +
 
 ## Schatting model met kleine sample size en betere prior
 
-```{r,echo= TRUE}
+```{r}
 fullrun <- 0
 
 
@@ -280,8 +272,6 @@ saveRDS(model_lb, "model_lb.rds")
 
 ```
 
-
-
 ```{r}
 
 samples_lb <- tidy_draws(model_lb, "^b") %>%
@@ -295,7 +285,7 @@ ggplot() +
   theme_bw() +
   labs(x = "Verschil tussen mannen en vrouwen", title = "Goede prior en veel data") +
   annotate(geom = "text", x = -2.5, y = 0.1, 
-           label = "n = 10\n priors\n lengte : normal(175, 20)\n verschil m/v normal(-10,5)")
+           label = "n = 20\n priors\n lengte : normal(175, 20)\n verschil m/v normal(-10,5)")
 
 
  
@@ -347,9 +337,36 @@ ggdag(prijsdag) +
 
 ```
 
-## Data genereren
+## Model
 
-```{r data MM, echo=TRUE}
+*Bayesian models are generative (Richard McElreath)*
+
+```{=tex}
+\begin{align*}
+P_i \sim \text{Normal}(\mu_i, \sigma) \qquad &
+ \text{[probability of data]}\\
+\mu_i = \alpha + \beta_1 C + \beta_2 M \qquad &
+  \text{[linear model]} \\
+\alpha = \text{Normal}(4, 1.5) \qquad &
+  [\text{prior for } \alpha] \\
+\beta_1 = \text{Normal}(4, 2) \qquad &
+  [\text{prior for } \beta_1] \\
+\beta_2 = \text{Normal}(0, 10) \qquad &
+  [\text{prior for } \beta_2] \\
+\sigma = \text{student_t}(3, 0, 3) \qquad &
+  [\text{prior for } \sigma]
+  
+\end{align*} 
+```
+## Hier nog een sheet met simuleren van de priors?
+
+Betere priors kiezen?
+
+Nu conservatieve prior voor marktmacht.
+
+## Schatting model
+
+```{r data MM}
 
 set.seed(123)
 
@@ -377,8 +394,6 @@ df_MM <- tibble(Firm = 1:80,
 
 ```
 
-## Schatting model
-
 ```{r}
 fullrun <- 0
 
@@ -387,9 +402,9 @@ Formula <- Prijs ~ 0 + Intercept + Complexiteit +
                    Marktaandeel
 # To treat the intercept as an ordinary population-level effect and avoid the centering parameterization, use 0 + Intercept on the right-hand side of the model formula.
     
-prior1 <- c(set_prior("normal(4, 4)", class = "b", coef = "Intercept"),
-            set_prior("normal(10, 5)", class = "b", coef = "Marktaandeel"),
-            set_prior("normal(2, 2)", class = "b", coef = "Complexiteit"))   
+prior1 <- c(set_prior("normal(4, 1.5)", class = "b", coef = "Intercept"),
+            set_prior("normal(0, 10)", class = "b", coef = "Marktaandeel"),
+            set_prior("normal(4, 2)", class = "b", coef = "Complexiteit"))   
 
 if(fullrun){
   
@@ -411,7 +426,6 @@ model_MM <- brm(
 saveRDS(model_MM, "model_MM.rds")
 } else {
  model_MM <- readRDS("model_MM.rds")}
-
 
 ```
 
@@ -539,5 +553,35 @@ ggplot() +
 
 
 
+```
+
+## Conclusie
+
+```{r}
+df<- tibble(x = 1:100, y = 1:100)
+
+ggplot(data = df, aes(x = x, y = y)) +
+  geom_rect(xmin = 0, xmax = 20, ymin = 80, ymax = 100, fill = "steelblue") +
+  annotate(geom = "text", x = 10, y = 90, label = "In welk effect\nben je\ngeinteresseerd?") +
+  geom_rect(xmin = 40, xmax = 60, ymin = 80, ymax = 100, fill = "steelblue1") +
+  annotate(geom = "text", x = 50, y = 90, label = "Modelleer DGP") +
+  geom_rect(xmin = 80, xmax = 100, ymin = 80, ymax = 100, fill = "steelblue2") +
+  annotate(geom = "text", x = 90, y = 90, label = "Maak statistisch\nmodel") +
+  geom_rect(xmin = 60, xmax = 80, ymin = 60, ymax = 40, fill = "steelblue3") +
+  annotate(geom = "text", x = 70, y = 50, label = "Simuleer\n&\nValideer") +
+  geom_rect(xmin = 60, xmax = 80, ymin = 0, ymax = 20, fill = "steelblue4") +
+  annotate(geom = "text", x = 70, y = 10, label = "Analyseer data") +
+  geom_segment(x=20, y= 90 , xend=39, yend= 90, arrow=arrow(), size=1, color="steelblue1") +
+  geom_segment(x=60, y= 90 , xend=79, yend= 90, arrow=arrow(), size=1, color="steelblue1") +
+  geom_segment(x=90, y= 79 , xend=75, yend= 61, arrow=arrow(ends = "both"), size=1, color="steelblue1") +
+  geom_segment(x=50, y= 79 , xend=65, yend= 61, arrow=arrow(ends = "both"), size=1, color="steelblue1") +
+  geom_segment(x=10, y= 50 , xend=60, yend= 50, size=1, color="steelblue1", linetype = "dashed") +
+  geom_segment(x=10, y= 50 , xend=10, yend= 79, arrow=arrow(), size=1, color="steelblue1", linetype = "dashed") +
+  geom_segment(x=70, y= 40 , xend=70, yend= 21, arrow=arrow(), size=1, color="steelblue1") +
+    xlim(0,100) +
+  ylim(0,100) +
+  theme_void()
+  
+  
 ```
 
