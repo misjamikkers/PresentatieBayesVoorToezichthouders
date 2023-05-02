@@ -1,0 +1,544 @@
+---
+title: "Gebruik van Bayesiaanse statistiek door toezichthouders"
+subtitle: "Onzekerheid en het datagenererende proces"
+author: "Misja Mikkers & Gertjan Verhoeven"
+institute: "Dutch Healthcare Authority (NZa) and Tilburg University"
+date: "April 20 2023"
+date-format: long
+lang: en
+format:
+  revealjs: 
+    theme: sky
+    logo: logo.png
+    slide-number: c/t #< collapsed/total
+    self-contained: true
+    footer: "NZa wetenschap"
+    editor: visual
+---
+
+## Waarom Bayesiaanse statistiek?
+
+```{r packages}
+
+options(scipen = 999) # scientific notation of
+
+library(tidyverse) # for datawrangling and plotting
+library(brms) # bayesian analyse
+library(broom) # voor tidy regressie resultaten
+library(broom.mixed) # broom voor brms
+library(tidybayes) # voor extracting samples
+library(gganimate) # voor animated plots
+library(ggridges) # voor ggridges plots
+library(dagitty) # voor DAGS
+library(ggdag) # voor mooiere DAGS
+library(ggrepel) # voor labels
+library(kableExtra) # voor tabellen
+
+
+```
+
+![](Bayes.png)
+
+<!-- 2 voordelen -->
+
+<!-- 1: meenemen priors (Van belang bij kleine sample sizes) -->
+
+<!-- 2: kansverdeling posterior ipv punt schatting, dat kun je propageren in de uitkomst -->
+
+<!-- Beide aspecten gaan we laten zien -->
+
+## Waarom willen wij dat toezichthouders Bayesiaanse statistiek gebruiken?
+
+-   met regulering/toezicht willen we marktuitkomsten beinvloeden
+-   we willen vooraf weten of het beleid kan helpen (wat veroorzaakt probleem?)
+-   beleid kunnen evalueren
+-   in een wereld van onzekerheid
+
+## Tools: DAGs en Bayes leiden tot inzicht in het DGP
+
+::: {align="center"}
+<img src="bayesianDAG.png" width="800" height="300"/>
+:::
+
+## Plan voor vandaag
+
+-   Waarom Bayesiaanse statistiek en wat doet het
+-   Simpel voorbeeld
+-   Bayesiaans beslismodel marktmacht
+
+## Eerste Bayesiaanse analyse
+
+```{r eerste analyse}
+
+set.seed(123)
+
+df_l <- tibble(Mannen = rnorm(n = 100000, mean = 181, sd = 12),
+              Vrouwen = rnorm(n = 100000, mean = 167, sd = 10)) %>%
+  pivot_longer(cols = 1:2, names_to = "Geslacht", values_to = "Lengte")
+
+df_l$Geslacht <- factor(df_l$Geslacht, levels = c("Mannen", "Vrouwen"))
+
+
+summ_df_l <- df_l %>%
+  group_by(Geslacht) %>%
+  summarise(Gemiddelde = round(mean(Lengte),1))
+
+ggplot() +
+  geom_histogram(data = df_l, aes(x = Lengte, fill = Geslacht), alpha = 0.5, color = "black") +
+  geom_vline(data = summ_df_l, aes(xintercept = Gemiddelde, color = Geslacht), linetype = "dashed", show.legend = FALSE) +
+  geom_text(data = summ_df_l, aes(x = Gemiddelde + 5, y = 15000, label = Gemiddelde, color = Geslacht), show.legend = FALSE, size = 3) +
+  theme_bw() +
+  scale_fill_manual(values = c("Mannen" = "steelblue4", 
+                               "Vrouwen" = "firebrick")) +
+  scale_color_manual(values = c("Mannen" = "steelblue4", 
+                               "Vrouwen" = "firebrick")) +
+  labs(x = "Lengte in centimeters", fill = " ", y = "Count")  +
+  facet_wrap(~ Geslacht, ncol = 1)
+  
+
+
+
+
+
+```
+
+## Schatting model model met veel data en strakke prior
+
+```{r}
+
+fullrun <- 0
+
+
+Formula <- Lengte ~ 0 + Intercept + Geslacht
+    
+prior1 <- c(set_prior("normal(175, 20)", class = "b", coef = "Intercept"),
+            set_prior("normal(0,1)", class = "b", coef = "GeslachtVrouwen"))    # idioot strakke prior om te laten zien dat de prior wordt verzwolgen door de data. Door prior vermoedelijk wel iets te lage schatting verschil
+
+if(fullrun){
+  
+
+model_l <- brm(
+            formula = Formula,
+            prior = prior1,
+            data   = df_l,
+            warmup = 500, 
+            iter   = 1500, 
+            chains = 4, 
+            init  = "random",
+            cores  = 4,
+            seed = 123,
+            silent = TRUE)
+
+saveRDS(model_l, "model_l.rds")
+} else {
+ model_l <- readRDS("model_l.rds")}
+
+
+```
+
+
+
+```{r}
+
+samples_l <- tidy_draws(model_l, "^b") %>%
+  dplyr::select(starts_with("b_")) %>%
+  dplyr::select(Vrouwen = b_GeslachtVrouwen) 
+  
+ggplot() +
+  geom_density(data = samples_l, aes(x = Vrouwen), 
+               fill = "firebrick", alpha = 0.5) +
+  geom_vline(xintercept = 167 - 181, color = "firebrick", linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Verschil tussen mannen en vrouwen", title = "Strakke prior en veel data") +
+  annotate(geom = "text", x = -13.8, y = 7, 
+           label = "n = 100.000\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
+
+ 
+
+
+
+```
+
+## Nu zelfde schatting met heel beperkte data!
+
+```{r eerste analyse beperkte sample}
+
+set.seed(123)
+
+df_la <- tibble(Mannen = rnorm(n = 10, mean = 181, sd = 12),
+              Vrouwen = rnorm(n = 10, mean = 167, sd = 10)) %>%
+  pivot_longer(cols = 1:2, names_to = "Geslacht", values_to = "Lengte")
+
+df_la$Geslacht <- factor(df_la$Geslacht, levels = c("Mannen", "Vrouwen"))
+
+summ_df_la <- df_la %>%
+  group_by(Geslacht) %>%
+  summarise(Gemiddelde = round(mean(Lengte),1))
+
+ggplot() +
+  geom_histogram(data = df_la, aes(x = Lengte, fill = Geslacht), alpha = 0.5, color = "black", bins = 4) +
+  geom_vline(data = summ_df_la, aes(xintercept = Gemiddelde, color = Geslacht), linetype = "dashed", show.legend = FALSE) +
+   geom_text(data = summ_df_la, aes(x = Gemiddelde + 5, y = 9, label = Gemiddelde, color = Geslacht), show.legend = FALSE, size = 3) +
+  theme_bw() +
+  scale_fill_manual(values = c("Mannen" = "steelblue4", 
+                               "Vrouwen" = "firebrick")) +
+  scale_color_manual(values = c("Mannen" = "steelblue4", 
+                               "Vrouwen" = "firebrick")) +
+  labs(x = "Lengte in centimeters", fill = " ", y = "Count") +
+  facet_wrap(~ Geslacht, ncol = 1)
+
+
+
+
+
+```
+
+```{r,echo= TRUE}
+fullrun <- 0
+
+
+Formula <- Lengte ~ 0 + Intercept + Geslacht
+    
+prior1 <- c(set_prior("normal(175, 20)", class = "b", coef = "Intercept"),
+            set_prior("normal(0,1)", class = "b", coef = "GeslachtVrouwen"))    
+
+if(fullrun){
+  
+
+model_la <- brm(
+            formula = Formula,
+            prior = prior1,
+            data   = df_la,
+            warmup = 500, 
+            iter   = 1500, 
+            chains = 4, 
+            init  = "random",
+            cores  = 4,
+            seed = 123,
+            silent = TRUE)
+
+saveRDS(model_la, "model_la.rds")
+} else {
+ model_la <- readRDS("model_la.rds")}
+
+
+```
+
+
+
+```{r}
+
+samples_la <- tidy_draws(model_la, "^b") %>%
+  dplyr::select(starts_with("b_")) %>%
+  dplyr::select(Vrouwen = b_GeslachtVrouwen) 
+  
+ggplot() +
+  geom_density(data = samples_la, aes(x = Vrouwen), 
+               fill = "firebrick", alpha = 0.5) +
+  geom_vline(xintercept = 169.1 - 181.9, color = "firebrick", linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Verschil tussen mannen en vrouwen", title = "Strakke prior en weinig data") +
+  annotate(geom = "text", x = -5, y = 0.3, 
+           label = "n = 10\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
+
+
+ 
+
+
+
+```
+
+## Schatting model met kleine sample size en betere prior
+
+```{r,echo= TRUE}
+fullrun <- 0
+
+
+Formula <- Lengte ~ 0 + Intercept + Geslacht
+    
+prior1 <- c(set_prior("normal(175, 20)", class = "b", coef = "Intercept"),
+            set_prior("normal(-10,5)", class = "b", coef = "GeslachtVrouwen"))    
+
+if(fullrun){
+  
+
+model_lb <- brm(
+            formula = Formula,
+            prior = prior1,
+            data   = df_la,
+            warmup = 500, 
+            iter   = 1500, 
+            chains = 4, 
+            init  = "random",
+            cores  = 4,
+            seed = 123,
+            silent = TRUE)
+
+saveRDS(model_lb, "model_lb.rds")
+} else {
+ model_lb <- readRDS("model_lb.rds")}
+
+
+```
+
+
+
+```{r}
+
+samples_lb <- tidy_draws(model_lb, "^b") %>%
+  dplyr::select(starts_with("b_")) %>%
+  dplyr::select(Vrouwen = b_GeslachtVrouwen) 
+  
+ggplot() +
+  geom_density(data = samples_lb, aes(x = Vrouwen), 
+               fill = "firebrick", alpha = 0.5) +
+  geom_vline(xintercept = 169.1 - 181.9, color = "firebrick", linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Verschil tussen mannen en vrouwen", title = "Goede prior en veel data") +
+  annotate(geom = "text", x = -2.5, y = 0.1, 
+           label = "n = 10\n priors\n lengte : normal(175, 20)\n verschil m/v normal(-10,5)")
+
+
+ 
+
+
+
+```
+
+## Nu een voorbeeld met DGP
+
+```{r}
+prijsdag1 <- dagitty('dag {
+Complexiteit [outcome, pos = "1,0"]
+Marktmacht [exposure, pos = "0,1"]
+Prijs [pos = "2,1"]
+
+Marktmacht <- Complexiteit -> Prijs
+Marktmacht -> Prijs
+
+}')
+
+prijsdag <- tidy_dagitty(prijsdag1)
+
+prijsdag[["data"]] <- prijsdag[["data"]] %>%
+  mutate(Kleur = as.factor(c(1, 1,  2, 3)))
+
+
+
+cols <- c("1" = "#f00000", "2" = "#5A2D81", "3" = "#a8862d")
+
+ggdag(prijsdag) + 
+   geom_dag_point(aes(color = Kleur)) +
+  geom_dag_text(col = "black") +
+  theme_void() +
+  theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white")
+  ) +
+ xlim(-0.5,2.5) +
+ ylim(-0.5,1.5) + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = cols)
+
+
+```
+
+## Data genereren
+
+```{r data MM, echo=TRUE}
+
+set.seed(123)
+
+df_MM <- tibble(Firm = 1:80,
+                Market = sample(
+                  x = c("A", "B", "C", "D", "E", "F", "G", "H", "I", "J"), 
+                  size = length(Firm), 
+                  replace = TRUE,
+                  prob = c(0.2, 0.1, 0.1, 0.3, 0.05, 0.03, 0.03, 0.02, 0.02, 0.05)),
+                Complexiteit = runif(n = length(Firm), 
+                                     min = 1, 
+                                     max = 5),
+                Patienten = rnorm(n = length(Firm),
+                                  mean = 100, sd = 10) +
+                  10 * Complexiteit) %>%
+  group_by(Market) %>%
+  mutate(Marktaandeel = Patienten/sum(Patienten)) %>%
+  ungroup() %>%
+  mutate(Prijs= 4 + 2* Complexiteit + 10 * Marktaandeel + 
+           rnorm(n = length(Firm),
+                 mean = 0,
+                 sd = 0.2)) # heel weinig ruis!
+
+
+
+```
+
+## Schatting model
+
+```{r}
+fullrun <- 0
+
+
+Formula <- Prijs ~ 0 + Intercept + Complexiteit + 
+                   Marktaandeel
+# To treat the intercept as an ordinary population-level effect and avoid the centering parameterization, use 0 + Intercept on the right-hand side of the model formula.
+    
+prior1 <- c(set_prior("normal(4, 4)", class = "b", coef = "Intercept"),
+            set_prior("normal(10, 5)", class = "b", coef = "Marktaandeel"),
+            set_prior("normal(2, 2)", class = "b", coef = "Complexiteit"))   
+
+if(fullrun){
+  
+
+model_MM <- brm(
+            formula = Formula,
+            prior = prior1,
+            data   = df_MM,
+            warmup = 500, 
+            iter   = 1500, 
+            chains = 4, 
+            init  = "random",
+            cores  = 4,
+            seed = 123,
+            control = list(adapt_delta = 0.99, 
+                           max_treedepth = 17),
+            silent = TRUE)
+
+saveRDS(model_MM, "model_MM.rds")
+} else {
+ model_MM <- readRDS("model_MM.rds")}
+
+
+```
+
+```{r}
+
+samples_MM <- tidy_draws(model_MM, "^b") %>%
+  dplyr::select(starts_with("b_")) %>%
+  pivot_longer(cols = 1:3, names_to = "Model1", values_to = "Value") %>%
+  mutate(Variabele = str_sub(Model1, 3)) %>%
+  dplyr::select(Variabele, Value)
+
+ggplot(data = samples_MM, aes(x = Value, 
+                             y = Variabele, 
+                             fill = Variabele)) +
+  geom_density_ridges2(scale = 0.9, quantile_lines=TRUE,
+                      quantile_fun=function(x,...)mean(x)) +
+  scale_fill_viridis_d() +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(y = " ", x = "Schatting van de  coefficient")
+
+
+
+```
+
+## Hoe goed voorspelt ons model?
+
+```{r}
+
+df_preds_MM1 <- as_tibble(predict(model_MM, newdata = df_MM))
+
+df_preds_MM2 <- cbind(df_MM, df_preds_MM1)
+
+
+ggplot() +
+    geom_segment(data = df_preds_MM2, aes(x = Prijs, xend = Prijs, y = Q2.5, yend = Q97.5), color = "grey50") +
+  geom_point(data = df_preds_MM2, aes(x = Prijs, y = Estimate)) +
+  geom_abline(intercept = 0, slope = 1, color = "firebrick", linetype = "dashed") +
+  theme_bw() +
+  labs(y = "Voorspelde prijzen", x = "Geobserveerde prijs")
+
+
+
+```
+
+## Hoe goed voorspelt ons model op individueel niveau?
+
+```{r}
+set.seed(123)
+
+Firms_sel <- paste0("V", sample(x = 1:80, size = 12, replace = FALSE))
+
+Post_prices <- as_tibble(posterior_predict(model_MM)) %>%
+  dplyr::select(Firms_sel) %>%
+  pivot_longer(cols = 1:length(Firms_sel), names_to = "Firms", values_to = "Predicted_Prices")
+
+Obs_prices <- df_MM %>%
+  mutate(Firms = paste0("V", Firm)) %>%
+  filter(Firms %in% Firms_sel)
+  
+ggplot() +
+  geom_density(data = Post_prices, aes(x = Predicted_Prices, fill = Firms), show.legend = FALSE, fill = "steelblue") +
+  geom_vline(data = Obs_prices, aes(xintercept = Prijs), color = "red", linetype = "dashed") +
+  facet_wrap(~ Firms, scales = "free") +
+  theme_bw() +
+  labs(x = "Voorspelde prijzen", y = "") +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+
+```
+
+## Counterfactual prices (1)
+
+```{r}
+
+df_MM <- df_MM %>%
+  mutate(Marktmacht = ifelse(Marktaandeel > 0.45, "Marktmacht", "Geen marktmacht")) %>%
+  mutate(Firms = paste0("V", Firm)) %>%
+  mutate(Label_MM = ifelse(Marktmacht == "Marktmacht", Firms, ""))
+
+ggplot(data = df_MM, aes(x = Marktaandeel, y = Prijs, color = Marktmacht, label = Label_MM)) +
+  geom_point() +
+  xlim(0, 1) +
+  scale_color_manual(values = c("Marktmacht" = "firebrick", "Geen marktmacht" = "seagreen4")) +
+  geom_vline(xintercept = 0.45, color = "firebrick", linetype = "dashed") +
+  geom_text_repel(size = 2, color = "black") +
+  theme_bw() +
+  labs(color = "")
+
+
+```
+
+## Counterfactual prices (2)
+
+```{r}
+
+df_MM_CF <- df_MM %>%
+  filter(Marktmacht == "Marktmacht") %>%
+   mutate(Firms = paste0("V", Firm)) %>%
+  mutate(Marktaandeel = 0.45)
+
+
+ 
+ 
+
+Post_prices_MM <- as_tibble(posterior_predict(newdata = df_MM_CF, model_MM)) %>%
+  rename(V4 = V1, V5 = V2, V11 = V3, V20 = V4, V24 = V5, V31 = V6, V50 = V7) %>%
+   pivot_longer(cols = 1:7, names_to = "Firms", values_to = "CF_Prices") %>%
+  droplevels()
+
+ggplot() +
+  geom_density_ridges(data = Post_prices_MM, aes(x = CF_Prices, y = Firms, fill = Firms), show.legend = FALSE) +
+  geom_vline(data = df_MM_CF, aes(xintercept = Prijs), color = "red", linetype = "dashed") +
+  facet_wrap(~ Firms, scales = "free") +
+  scale_fill_viridis_d(alpha = 0.5) +
+  stat_density_ridges(data = Post_prices_MM, aes(x = CF_Prices,  y = Firms, fill = Firms), quantile_lines = TRUE, quantiles = c(0.025, 0.5, 0.975), alpha = 0.6, size=1, show.legend = FALSE, linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Counterfactual prijzen bij een marktaandeel van 0.45", y = "")  +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+
+
+```
+
