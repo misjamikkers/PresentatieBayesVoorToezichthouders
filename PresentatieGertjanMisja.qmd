@@ -9,10 +9,9 @@ lang: en
 format:
   revealjs: 
     theme: sky
-    logo: logo.png
+    logo: logo1.png
     slide-number: c/t #< collapsed/total
     self-contained: true
-    footer: "NZa wetenschap"
     editor: visual
 ---
 
