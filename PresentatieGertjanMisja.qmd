@@ -59,6 +59,45 @@ library(kableExtra) # voor tabellen
 -   beleid kunnen evalueren
 -   in een wereld van onzekerheid
 
+## Eerste Bayesiaanse analyse: het DGP
+
+```{r}
+lengtedag1 <- dagitty('dag {
+Lengte [outcome, pos = "1,0"]
+Geslacht [exposure, pos = "0,1"]
+
+Geslacht -> Lengte
+
+}')
+
+lengtedag <- tidy_dagitty(lengtedag1)
+
+lengtedag[["data"]] <- lengtedag[["data"]] %>%
+  mutate(Kleur = as.factor(c(1, 2)))
+
+cols <- c("1" = "#f00000", "2" = "#5A2D81")
+
+ggdag(lengtedag) + 
+   geom_dag_point(aes(color = Kleur)) +
+  geom_dag_text(col = "black") +
+  theme_void() +
+  theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white")
+  ) +
+ xlim(-0.5,2.5) +
+ ylim(-0.5,1.5) + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = cols)
+
+
+```
+
 ## Eerste Bayesiaanse analyse
 
 ```{r eerste analyse}
@@ -95,7 +134,7 @@ ggplot() +
 
 ```
 
-## Schatting model model met veel data en strakke prior
+## Schatting model met veel data en strakke prior
 
 ```{r}
 
@@ -118,7 +157,7 @@ model_l <- brm(
             iter   = 1500, 
             chains = 4, 
             init  = "random",
-            cores  = 4,
+            cores  = 2,
             seed = 123,
             silent = TRUE)
 
@@ -140,8 +179,9 @@ ggplot() +
                fill = "firebrick", alpha = 0.5) +
   geom_vline(xintercept = 167 - 181, color = "firebrick", linetype = "dashed") +
   theme_bw() +
-  labs(x = "Verschil tussen mannen en vrouwen", title = "Strakke prior en veel data") +
-  annotate(geom = "text", x = -13.8, y = 7, 
+  expand_limits(x = c(0, -20)) +
+  labs(x = "Verschil tussen mannen en vrouwen", title = "") +
+  annotate(geom = "text", x = -5, y = 7, 
            label = "n = 200.000\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
 
  
@@ -228,6 +268,7 @@ ggplot() +
                fill = "firebrick", alpha = 0.5) +
   geom_vline(xintercept = 169.1 - 181.9, color = "firebrick", linetype = "dashed") +
   theme_bw() +
+    expand_limits(x = c(0, -20)) +
   labs(x = "Verschil tussen mannen en vrouwen", title = "Strakke prior en weinig data") +
   annotate(geom = "text", x = -5, y = 0.3, 
            label = "n = 20\n priors\n lengte : normal(175, 20)\n verschil m/v normal(0,1)")
@@ -261,7 +302,7 @@ model_lb <- brm(
             iter   = 1500, 
             chains = 4, 
             init  = "random",
-            cores  = 4,
+            cores  = 2,
             seed = 123,
             silent = TRUE)
 
@@ -283,6 +324,7 @@ ggplot() +
                fill = "firebrick", alpha = 0.5) +
   geom_vline(xintercept = 169.1 - 181.9, color = "firebrick", linetype = "dashed") +
   theme_bw() +
+   expand_limits(x = c(0, -20)) +
   labs(x = "Verschil tussen mannen en vrouwen", title = "Goede prior en veel data") +
   annotate(geom = "text", x = -2.5, y = 0.1, 
            label = "n = 20\n priors\n lengte : normal(175, 20)\n verschil m/v normal(-10,5)")
@@ -294,7 +336,7 @@ ggplot() +
 
 ```
 
-## Nu een voorbeeld met DGP
+## Nu een voorbeeld met een complexer DGP
 
 ```{r}
 prijsdag1 <- dagitty('dag {
@@ -358,11 +400,43 @@ P_i \sim \text{Normal}(\mu_i, \sigma) \qquad &
   
 \end{align*} 
 ```
-## Hier nog een sheet met simuleren van de priors?
+## Simuleren het DGP met fake data en prior parameters
 
-Betere priors kiezen?
+```{r priors MM}
+n_curves <- 10
+grid <- -1000:1000/10
 
-Nu conservatieve prior voor marktmacht.
+# simuleren geen data, dit doen we later, hier even typische waardes
+avg_market_share <- 0.3
+avg_complexity <- 3
+
+# need also to simulate marktaandelen en complexiteiten
+set.seed(123)
+
+for (i in 1:n_curves){
+  run <- i
+  alpha <- rnorm(1, mean = 4, sd = 1.5) # intercept
+  beta_1 <- rnorm(1, mean = 4, sd = 2) # , complexere pats is hogere prijs
+  beta_2 <- rnorm(1, mean = 0, sd = 10) # marktaandeel, weten niet of het wat doet, is het effect wat we willen schatten
+  sigma_price <- abs(rstudent_t(1, df = 3, mu = 0, sigma = 3)) # noise
+  mean_price <- alpha + beta_1 * avg_market_share + beta_2 * avg_complexity
+  price_distribution <- dnorm(grid, mean = mean_price, sd = sigma_price)
+  if (i == 1){
+    df_pp <- data.frame(grid, price_distribution, run, alpha, beta_1, beta_2, sigma_price, mean_price)
+  } else {
+    df_pp <- rbind(df_pp, 
+                   data.frame(grid, price_distribution, run, alpha, beta_1, beta_2, sigma_price, mean_price))
+  }
+}
+
+ggplot(df_pp, aes(x = grid, y = price_distribution, col = factor(run))) +
+  geom_line() +
+  labs(x = "price", y= "probability of the data") +
+  ggtitle("verwachtte prijzen op basis van de gekozen priors voor een bedrijf met 30% marktaandeel \n en gemiddelde Complexiteit")
+```
+
+
+Conclusie: kunnen betere priors kiezen!
 
 ## Schatting model
 
@@ -584,4 +658,3 @@ ggplot(data = df, aes(x = x, y = y)) +
   
   
 ```
-
