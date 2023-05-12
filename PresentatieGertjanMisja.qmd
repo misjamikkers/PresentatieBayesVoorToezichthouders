@@ -75,7 +75,7 @@ lengtedag <- tidy_dagitty(lengtedag1)
 lengtedag[["data"]] <- lengtedag[["data"]] %>%
   mutate(Kleur = as.factor(c(1, 2)))
 
-cols <- c("1" = "#f00000", "2" = "#5A2D81")
+cols <- c("1" = "#f00000", "2" = "#a8862d")
 
 ggdag(lengtedag) + 
    geom_dag_point(aes(color = Kleur)) +
@@ -429,10 +429,11 @@ for (i in 1:n_curves){
   }
 }
 
-ggplot(df_pp, aes(x = grid, y = price_distribution, col = factor(run))) +
+ggplot(df_pp, aes(x = grid, y = price_distribution, color = factor(run))) +
   geom_line() +
-  labs(x = "price", y= "probability of the data") +
-  ggtitle("verwachtte prijzen op basis van de gekozen priors voor een bedrijf met 30% marktaandeel \n en gemiddelde Complexiteit")
+  labs(x = "price", y= "probability of the data", color = "Draw") +
+  ggtitle("Verwachte prijzen op basis van de gekozen priors voor een bedrijf met 30% marktaandeel \n en gemiddelde Complexiteit") +
+  theme_bw()
 ```
 
 
@@ -477,7 +478,7 @@ Formula <- Prijs ~ 0 + Intercept + Complexiteit +
 # To treat the intercept as an ordinary population-level effect and avoid the centering parameterization, use 0 + Intercept on the right-hand side of the model formula.
     
 prior1 <- c(set_prior("normal(4, 1.5)", class = "b", coef = "Intercept"),
-            set_prior("normal(0, 10)", class = "b", coef = "Marktaandeel"),
+            set_prior("normal(10, 4)", class = "b", coef = "Marktaandeel"),
             set_prior("normal(4, 2)", class = "b", coef = "Complexiteit"))   
 
 if(fullrun){
